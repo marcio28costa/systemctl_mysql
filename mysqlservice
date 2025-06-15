@@ -1,0 +1,104 @@
+#!/bin/sh
+
+MYCNF8="/etc/my.cnf"
+MYCNF57="/etc/my57.cnf"
+
+status_instance() {
+    versao=$1
+    instancia=$2
+    echo "Status da instância $versao@$instancia:"
+    systemctl status ${versao}@${instancia}.service --no-pager
+    echo "----------------------------------------"
+}
+
+start_instance() {
+    versao=$1
+    instancia=$2
+    echo "Iniciando instância $versao@$instancia..."
+    systemctl start ${versao}@${instancia}.service
+}
+
+stop_instance() {
+    versao=$1
+    instancia=$2
+    echo "Parando instância $versao@$instancia..."
+    systemctl stop ${versao}@${instancia}.service
+}
+
+manage_all() {
+    acao=$1
+    for versao in 8 57; do
+        if [ "$versao" = "8" ]; then
+            conf="$MYCNF8"
+            prefixo="mysql8"
+        else
+            conf="$MYCNF57"
+            prefixo="mysql57"
+        fi
+
+        if [ -f "$conf" ]; then
+            grep '^\[mysqld@' "$conf" | while read -r linha; do
+                instancia=$(echo "$linha" | sed -n 's/^\[mysqld@\([^]]*\)\]/\1/p')
+                if [ -n "$instancia" ]; then
+                    case $acao in
+                        status) status_instance $prefixo $instancia ;;
+                        start)  start_instance  $prefixo $instancia ;;
+                        stop)   stop_instance   $prefixo $instancia ;;
+                        restart)
+                            stop_instance $prefixo $instancia
+                            start_instance $prefixo $instancia
+                        ;;
+                    esac
+                fi
+            done
+        fi
+    done
+}
+
+manage_one() {
+    acao=$1
+    instancia=$2
+    achou=0
+    for versao in 8 57; do
+        if [ "$versao" = "8" ]; then
+            conf="$MYCNF8"
+            prefixo="mysql8"
+        else
+            conf="$MYCNF57"
+            prefixo="mysql57"
+        fi
+
+        if [ -f "$conf" ]; then
+            if grep -q "^\[mysqld@${instancia}\]" "$conf"; then
+                achou=1
+                case $acao in
+                    status) status_instance $prefixo $instancia ;;
+                    start)  start_instance  $prefixo $instancia ;;
+                    stop)   stop_instance   $prefixo $instancia ;;
+                    restart)
+                        stop_instance $prefixo $instancia
+                        start_instance $prefixo $instancia
+                    ;;
+                esac
+            fi
+        fi
+    done
+    if [ $achou -eq 0 ]; then
+        echo "Instância '$instancia' não encontrada."
+    fi
+}
+
+case "$1" in
+    status|start|stop|restart)
+        if [ "$2" = "all" ]; then
+            manage_all $1
+        elif [ -n "$2" ]; then
+            manage_one $1 $2
+        else
+            echo "Uso: $0 {status|start|stop|restart} {all|instancia}"
+        fi
+        ;;
+    *)
+        echo "Uso: $0 {status|start|stop|restart} {all|instancia}"
+        ;;
+esac
